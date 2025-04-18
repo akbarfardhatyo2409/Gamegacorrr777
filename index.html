@@ -12,11 +12,12 @@
     input, select, button { width: 100%; padding: 10px; margin: 8px 0; border: none; border-radius: 5px; }
     input, select { background: #2c2c2c; color: #fff; }
     button { background: #e74c3c; color: #fff; font-weight: bold; cursor: pointer; }
+    #btn-google { background: #4285F4; }
     button:disabled { background: #555; cursor: not-allowed; }
     #wheel { position: relative; margin: 20px auto; width: 300px; height: 300px; border-radius: 50%; overflow: hidden; box-shadow: 0 0 10px rgba(0,0,0,0.7); transition: transform 4s cubic-bezier(0.25,0.1,0.25,1); }
     #pointer { position: absolute; top: -10px; left: 50%; width: 0; height: 0; border-left: 15px solid transparent; border-right: 15px solid transparent; border-bottom: 20px solid #e74c3c; transform: translateX(-50%); }
     #user-info { font-size: 0.9rem; margin-bottom: 10px; position: relative; }
-    #btn-logout { position: absolute; right: 20px; top: 0; background: #555; }
+    #btn-logout { position: absolute; right: 0; top: 0; background: #555; width: auto; padding: 6px 12px; }
     #history { text-align: left; margin-top: 20px; max-height: 150px; overflow-y: auto; }
     #history h3 { margin-bottom: 8px; }
     #history-list li { margin-bottom: 4px; font-size: 0.85rem; }
@@ -29,6 +30,7 @@
     <input type="email" id="email" placeholder="Email" />
     <input type="password" id="password" placeholder="Password" />
     <button id="btn-login">Login</button>
+    <button id="btn-google">Login with Google</button>
     <p class="error" id="login-error"></p>
   </div>  <div id="game-container" class="card" style="display:none;">
     <div id="user-info">
@@ -63,7 +65,7 @@
     <button id="btn-topup">Top Up</button>
     <p id="admin-msg" class="error"></p>
   </div>  <!-- Firebase SDKs -->  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>  <script>
-    // Config
+    // Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyBTMMR0QtYlSb_kMQXVepbq7iZhSOP_wGc",
       authDomain: "game625-b0879.firebaseapp.com",
@@ -76,127 +78,169 @@
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
     const db = firebase.firestore();
+    const googleProvider = new firebase.auth.GoogleAuthProvider();
     const ADMIN_UID = "vDzT77PzNXOqzT0EHWbwYqMH1In2";
 
     // Elements
     const loginContainer = document.getElementById('login-container');
     const gameContainer = document.getElementById('game-container');
     const adminContainer = document.getElementById('admin-container');
-    const emailInput = document.getElementById('email'), passInput = document.getElementById('password');
-    const btnLogin = document.getElementById('btn-login'), loginError = document.getElementById('login-error');
-    const userEmailSpan = document.getElementById('user-email'), btnLogout = document.getElementById('btn-logout');
+    const emailInput = document.getElementById('email');
+    const passInput = document.getElementById('password');
+    const btnLogin = document.getElementById('btn-login');
+    const btnGoogle = document.getElementById('btn-google');
+    const loginError = document.getElementById('login-error');
+    const userEmailSpan = document.getElementById('user-email');
+    const btnLogout = document.getElementById('btn-logout');
     const balanceText = document.getElementById('balance');
-    const betAmtInput = document.getElementById('bet-amount'), betNumInput = document.getElementById('bet-number');
-    const betColorSelect = document.getElementById('bet-color'), betTypeRadios = document.getElementsByName('bet-type');
-    const btnSpin = document.getElementById('btn-spin'), spinResult = document.getElementById('spin-result');
+    const betAmtInput = document.getElementById('bet-amount');
+    const betNumInput = document.getElementById('bet-number');
+    const betColorSelect = document.getElementById('bet-color');
+    const betTypeRadios = document.getElementsByName('bet-type');
+    const btnSpin = document.getElementById('btn-spin');
+    const spinResult = document.getElementById('spin-result');
     const historyList = document.getElementById('history-list');
-    const adminUidInput = document.getElementById('admin-userid'), adminAmtInput = document.getElementById('admin-amount');
-    const btnTopup = document.getElementById('btn-topup'), adminMsg = document.getElementById('admin-msg');
+    const adminUidInput = document.getElementById('admin-userid');
+    const adminAmtInput = document.getElementById('admin-amount');
+    const btnTopup = document.getElementById('btn-topup');
+    const adminMsg = document.getElementById('admin-msg');
 
-    let currentUser, userBalance = 0;
+    let currentUser = null;
+    let userBalance = 0;
     const history = [];
 
     // Draw wheel
-    const canvas = document.getElementById('wheel-canvas'), ctx = canvas.getContext('2d');
+    const canvas = document.getElementById('wheel-canvas');
+    const ctx = canvas.getContext('2d');
     const numbers = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
-    const colors = numbers.map(n=>n===0?'#2ecc71':(n%2===0?'#c0392b':'#000'));
-    const segAngle = 360/numbers.length;
-    (function drawWheel(){
-      numbers.forEach((num,i)=>{
-        const start=(i*segAngle-90)*Math.PI/180;
-        const end=((i+1)*segAngle-90)*Math.PI/180;
-        ctx.beginPath(); ctx.moveTo(150,150);
-        ctx.arc(150,150,140,start,end);
-        ctx.fillStyle=colors[i]; ctx.fill();
-        ctx.save(); ctx.translate(150,150);
-        const ang=((i*segAngle+segAngle/2)-90)*Math.PI/180; ctx.rotate(ang);
-        ctx.fillStyle='#fff'; ctx.textAlign='right'; ctx.font='14px Roboto';
-        ctx.fillText(num,130,5); ctx.restore();
-      });
-    })();
+    const colors = numbers.map(n => n===0?'#2ecc71':(n%2===0?'#c0392b':'#000'));
+    const segAngle = 360 / numbers.length;
+    (function drawWheel(){ numbers.forEach((num,i)=>{ const start=(i*segAngle-90)*Math.PI/180; const end=((i+1)*segAngle-90)*Math.PI/180; ctx.beginPath(); ctx.moveTo(150,150); ctx.arc(150,150,140,start,end); ctx.fillStyle=colors[i]; ctx.fill(); ctx.save(); ctx.translate(150,150); const ang=((i*segAngle+segAngle/2)-90)*Math.PI/180; ctx.rotate(ang); ctx.fillStyle='#fff'; ctx.textAlign='right'; ctx.font='14px Roboto'; ctx.fillText(num,130,5); ctx.restore(); }); })();
 
     // Toggle bet inputs
-    betTypeRadios.forEach(r=>r.addEventListener('change',()=>{
-      if(r.value==='color'&&r.checked){ betNumInput.style.display='none'; betColorSelect.style.display='block'; }
-      if(r.value==='number'&&r.checked){ betNumInput.style.display='block'; betColorSelect.style.display='none'; }
+    betTypeRadios.forEach(r => r.addEventListener('change', () => {
+      if(r.value==='color' && r.checked) { betNumInput.style.display='none'; betColorSelect.style.display='block'; }
+      if(r.value==='number' && r.checked) { betNumInput.style.display='block'; betColorSelect.style.display='none'; }
     }));
 
-    function updateBalanceUI(){ balanceText.textContent=`Balance: $${userBalance}`; }
+    function updateBalanceUI() { balanceText.textContent = `Balance: $${userBalance}`; }
 
-    // Login/register
-    btnLogin.addEventListener('click',()=>{
-      loginError.textContent=''; const email=emailInput.value.trim(), pass=passInput.value;
-      if(!email||!pass){ loginError.textContent='Masukkan email & password.'; return; }
-      auth.signInWithEmailAndPassword(email,pass)
-        .catch(err=>{
-          if(err.code==='auth/user-not-found'){
-            return auth.createUserWithEmailAndPassword(email,pass)
-              .then(cred=> db.collection('users').doc(cred.user.uid).set({balance:1000}));
-          }
-          throw err;
-        })
-        .catch(err=> loginError.textContent=err.message);
-    });
-
-    btnLogout.addEventListener('click',()=> auth.signOut());
-
-    // Auth state
-    auth.onAuthStateChanged(user=>{
-      if(user){
-        currentUser=user; userEmailSpan.textContent=user.email;
-        loginContainer.style.display='none'; gameContainer.style.display='block';
-        if(user.uid===ADMIN_UID) adminContainer.style.display='block';
-        const userRef=db.collection('users').doc(user.uid);
-        userRef.get().then(doc=>{
-          if(doc.exists){ userBalance=doc.data().balance; updateBalanceUI(); }
-          else { userRef.set({balance:1000}).then(()=>{ userBalance=1000; updateBalanceUI(); }); }
-        });
-      } else {
-        loginContainer.style.display='block'; gameContainer.style.display='none'; adminContainer.style.display='none';
+    // Email/Password login/register
+    btnLogin.addEventListener('click', async () => {
+      loginError.textContent = '';
+      const email = emailInput.value.trim();
+      const pass = passInput.value;
+      if(!email || !pass) { loginError.textContent = 'Masukkan email & password.'; return; }
+      try {
+        try {
+          await auth.signInWithEmailAndPassword(email, pass);
+        } catch(err) {
+          if(err.code === 'auth/user-not-found') {
+            const cred = await auth.createUserWithEmailAndPassword(email, pass);
+            await db.collection('users').doc(cred.user.uid).set({ balance: 1000 });
+          } else throw err;
+        }
+      } catch(err) {
+        loginError.textContent = err.message;
       }
     });
 
-    // Spin
-    btnSpin.addEventListener('click',()=>{
-      spinResult.textContent=''; const betAmt=parseInt(betAmtInput.value), betType=document.querySelector('input[name="bet-type"]:checked').value;
-      let betVal = betType==='number'?parseInt(betNumInput.value):betColorSelect.value;
-      if(!betAmt||betAmt<1||betAmt>userBalance){ spinResult.textContent='Taruhan tidak valid.'; return; }
-      if(betType==='number'&&(isNaN(betVal)||betVal<0||betVal>36)){ spinResult.textContent='Nomor taruhan tidak valid.'; return; }
-      btnSpin.disabled=true;
-      const spins=Math.floor(Math.random()*4)+4, randAng=Math.random()*360, total=spins*360+randAng;
-      document.getElementById('wheel').style.transform=`rotate(${total}deg)`;
-      setTimeout(()=>{
-        const final=total%360, idx=Math.floor(((360-final+segAngle/2)%360)/segAngle);
-        const resNum=numbers[idx], resClr=colors[idx]==='#2ecc71'?'green':(colors[idx]==='#c0392b'?'red':'black');
-        let msg='';
-        if(betType==='number'){
-          if(resNum===betVal){ const pay=betAmt*35; userBalance+=pay; msg=`Menang! Nomor ${resNum}. +$${pay}`; }
-          else { userBalance-=betAmt; msg=`Kalah! Nomor ${resNum}. -$${betAmt}`; }
-        } else {
-          if(resClr===betVal){ const pay=betVal==='green'?betAmt*14:betAmt*2; userBalance+=pay; msg=`Menang! Warna ${resClr}. +$${pay}`; }
-          else { userBalance-=betAmt; msg=`Kalah! Warna ${resClr}. -$${betAmt}`; }
-        }
-        db.collection('users').doc(currentUser.uid).update({balance:userBalance});
-        updateBalanceUI(); history.unshift({time:new Date().toLocaleTimeString(),msg}); renderHistory();
-        spinResult.textContent=msg; btnSpin.disabled=false;
-        if(userBalance<=0){ spinResult.textContent+=' Saldo habis, hubungi admin.'; btnSpin.disabled=true; }
-      },4000);
+    // Google login
+    btnGoogle.addEventListener('click', async () => {
+      loginError.textContent = '';
+      try {
+        const result = await auth.signInWithPopup(googleProvider);
+        // ensure user doc
+        const userRef = db.collection('users').doc(result.user.uid);
+        const doc = await userRef.get();
+        if(!doc.exists) await userRef.set({ balance: 1000 });
+      } catch(err) {
+        loginError.textContent = err.message;
+      }
     });
 
-    function renderHistory(){ historyList.innerHTML=''; history.slice(0,5).forEach(h=>{ const li=document.createElement('li'); li.textContent=`[${h.time}] ${h.msg}`; historyList.appendChild(li); }); }
+    // Logout
+    btnLogout.addEventListener('click', () => auth.signOut());
+
+    // Auth state listener
+    auth.onAuthStateChanged(async user => {
+      if(user) {
+        currentUser = user;
+        userEmailSpan.textContent = user.email;
+        loginContainer.style.display = 'none';
+        gameContainer.style.display = 'block';
+        if(user.uid === ADMIN_UID) adminContainer.style.display = 'block';
+        // load or init balance
+        const userRef = db.collection('users').doc(user.uid);
+        const doc = await userRef.get();
+        if(doc.exists) userBalance = doc.data().balance;
+        else { await userRef.set({ balance: 1000 }); userBalance = 1000; }
+        updateBalanceUI();
+      } else {
+        currentUser = null;
+        loginContainer.style.display = 'block';
+        gameContainer.style.display = 'none';
+        adminContainer.style.display = 'none';
+      }
+    });
+
+    // Spin logic
+    btnSpin.addEventListener('click', () => {
+      spinResult.textContent = '';
+      const betAmt = parseInt(betAmtInput.value);
+      const betType = document.querySelector('input[name="bet-type"]:checked').value;
+      let betVal = betType === 'number' ? parseInt(betNumInput.value) : betColorSelect.value;
+      if(!betAmt || betAmt < 1 || betAmt > userBalance) { spinResult.textContent = 'Taruhan tidak valid.'; return; }
+      if(betType === 'number' && (isNaN(betVal) || betVal < 0 || betVal > 36)) { spinResult.textContent = 'Nomor taruhan tidak valid.'; return; }
+      btnSpin.disabled = true;
+      const spins = Math.floor(Math.random() * 4) + 4;
+      const randAng = Math.random() * 360;
+      const total = spins * 360 + randAng;
+      document.getElementById('wheel').style.transform = `rotate(${total}deg)`;
+      setTimeout(async () => {
+        const final = total % 360;
+        const idx = Math.floor(((360 - final + segAngle/2) % 360) / segAngle);
+        const resNum = numbers[idx];
+        const resClr = colors[idx] === '#2ecc71' ? 'green' : (colors[idx] === '#c0392b' ? 'red' : 'black');
+        let msg = '';
+        if(betType === 'number') {
+          if(resNum === betVal) { const pay = betAmt * 35; userBalance += pay; msg = `Menang! Nomor ${resNum}. +$${pay}`; }
+          else { userBalance -= betAmt; msg = `Kalah! Nomor ${resNum}. -$${betAmt}`; }
+        } else {
+          if(resClr === betVal) { const pay = betVal === 'green' ? betAmt * 14 : betAmt * 2; userBalance += pay; msg = `Menang! Warna ${resClr}. +$${pay}`; }
+          else { userBalance -= betAmt; msg = `Kalah! Warna ${resClr}. -$${betAmt}`; }
+        }
+        await db.collection('users').doc(currentUser.uid).update({ balance: userBalance });
+        updateBalanceUI();
+        history.unshift({ time: new Date().toLocaleTimeString(), msg });
+        renderHistory();
+        spinResult.textContent = msg;
+        btnSpin.disabled = false;
+        if(userBalance <= 0) { spinResult.textContent += ' Saldo habis, hubungi admin.'; btnSpin.disabled = true; }
+      }, 4000);
+    });
+
+    function renderHistory() {
+      historyList.innerHTML = '';
+      history.slice(0,5).forEach(h => { const li = document.createElement('li'); li.textContent = `[${h.time}] ${h.msg}`; historyList.appendChild(li); });
+    }
 
     // Admin top-up
-    btnTopup.addEventListener('click',()=>{
-      adminMsg.textContent=''; const uid=adminUidInput.value.trim(), amt=parseInt(adminAmtInput.value);
-      if(!uid||!amt||amt<1){ adminMsg.textContent='UID atau jumlah tidak valid.'; return; }
-      const uref=db.collection('users').doc(uid);
-      uref.get().then(doc=>{
-        if(!doc.exists){ adminMsg.textContent='User tidak ditemukan.'; return; }
-        const newBal=doc.data().balance+amt;
-        uref.update({balance:newBal})
-          .then(()=> adminMsg.textContent=`Top-up sukses. Saldo sekarang $${newBal}`)
-          .catch(e=> adminMsg.textContent=e.message);
-      });
+    btnTopup.addEventListener('click', async () => {
+      adminMsg.textContent = '';
+      const uid = adminUidInput.value.trim();
+      const amt = parseInt(adminAmtInput.value);
+      if(!uid || !amt || amt < 1) { adminMsg.textContent = 'UID atau jumlah tidak valid.'; return; }
+      try {
+        const uref = db.collection('users').doc(uid);
+        const doc = await uref.get();
+        if(!doc.exists) { adminMsg.textContent = 'User tidak ditemukan.'; return; }
+        const newBal = doc.data().balance + amt;
+        await uref.update({ balance: newBal });
+        adminMsg.textContent = `Top-up sukses. Saldo sekarang $${newBal}`;
+      } catch(err) {
+        adminMsg.textContent = err.message;
+      }
     });
   </script></body>
 </html>
