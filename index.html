@@ -1,0 +1,210 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Growtopia-style Roulette Game</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, sans-serif; background: #2c2c2c; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; }
+    #login-container, #game-container, #admin-container { width: 360px; padding: 20px; background: #333; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+    h2 { text-align: center; margin-bottom: 16px; }
+    input[type="email"], input[type="password"], input[type="number"], input[type="text"] { width: 100%; padding: 8px; margin: 8px 0; border: none; border-radius: 4px; }
+    button { width: 100%; padding: 10px; margin-top: 12px; border: none; border-radius: 4px; background: #e74c3c; color: #fff; font-size: 1rem; cursor: pointer; }
+    button:disabled { background: #888; cursor: not-allowed; }
+    #wheel { width: 300px; height: 300px; border-radius: 50%; background: #555; margin: 16px auto; position: relative; overflow: hidden; }
+    #pointer { position: absolute; top: -10px; left: 50%; width: 0; height: 0; border-left: 15px solid transparent; border-right: 15px solid transparent; border-bottom: 20px solid #e74c3c; transform: translateX(-50%); }
+    #balance { text-align: center; margin: 8px 0; font-size: 1.2rem; }
+    #bet-section { text-align: center; }
+  </style>
+</head>
+<body>
+  <div id="login-container">
+    <h2>Login / Register</h2>
+    <input type="email" id="email" placeholder="Email" />
+    <input type="password" id="password" placeholder="Password" />
+    <button id="btn-login">Login</button>
+    <div id="login-error" style="color: #f33; text-align: center;"></div>
+  </div>  <div id="game-container" style="display:none;">
+    <h2>Roulette Casino</h2>
+    <div id="balance">Balance: $0</div>
+    <div id="wheel">
+      <div id="pointer"></div>
+      <canvas id="wheel-canvas" width="300" height="300"></canvas>
+    </div>
+    <div id="bet-section">
+      <input type="number" id="bet-amount" min="1" placeholder="Bet Amount ($)" />
+      <input type="number" id="bet-number" min="0" max="36" placeholder="Number (0-36)" />
+      <button id="btn-spin">Spin</button>
+      <div id="spin-result" style="margin-top:12px;"></div>
+    </div>
+  </div>  <!-- Admin Panel -->  <div id="admin-container" style="display:none; margin-top:20px;">
+    <h2>Admin Top-up</h2>
+    <input type="text" id="admin-userid" placeholder="User UID" />
+    <input type="number" id="admin-amount" placeholder="Amount to Add ($)" />
+    <button id="btn-topup">Top Up</button>
+    <div id="admin-msg" style="margin-top:8px;"></div>
+  </div>  <!-- Firebase SDK -->  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>  <script>
+    // Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyBTMMR0QtYlSb_kMQXVepbq7iZhSOP_wGc",
+      authDomain: "game625-b0879.firebaseapp.com",
+      projectId: "game625-b0879",
+      storageBucket: "game625-b0879.appspot.com",
+      messagingSenderId: "73751482471",
+      appId: "1:73751482471:web:3276e299534a0134bd04c2",
+      measurementId: "G-DM0J4F9B5H"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    // Admin UID (ganti dengan UID adminmu setelah login pertama)
+    const ADMIN_UID = "REPLACE_WITH_ADMIN_UID";
+
+    // Elements
+    const loginContainer = document.getElementById('login-container');
+    const gameContainer = document.getElementById('game-container');
+    const adminContainer = document.getElementById('admin-container');
+    const emailInput = document.getElementById('email');
+    const passInput = document.getElementById('password');
+    const btnLogin = document.getElementById('btn-login');
+    const loginError = document.getElementById('login-error');
+    const balanceText = document.getElementById('balance');
+    const betAmountInput = document.getElementById('bet-amount');
+    const betNumberInput = document.getElementById('bet-number');
+    const btnSpin = document.getElementById('btn-spin');
+    const spinResult = document.getElementById('spin-result');
+    const adminUserIdInput = document.getElementById('admin-userid');
+    const adminAmountInput = document.getElementById('admin-amount');
+    const btnTopup = document.getElementById('btn-topup');
+    const adminMsg = document.getElementById('admin-msg');
+
+    let currentUser;
+    let userBalance = 0;
+
+    // Draw roulette wheel
+    const wheelCanvas = document.getElementById('wheel-canvas');
+    const ctx = wheelCanvas.getContext('2d');
+    const numbers = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
+    const colors = numbers.map(n => n === 0 ? '#2ecc71' : (n % 2 === 0 ? '#c0392b' : '#000'));
+    const segAngle = 360 / numbers.length;
+    function drawWheel() {
+      numbers.forEach((num, i) => {
+        const start = (i*segAngle - 90) * Math.PI/180;
+        const end = ((i+1)*segAngle - 90) * Math.PI/180;
+        ctx.beginPath(); ctx.moveTo(150,150);
+        ctx.arc(150,150,140, start, end);
+        ctx.fillStyle = colors[i]; ctx.fill();
+        // text
+        ctx.save(); ctx.translate(150,150);
+        const ang = ((i*segAngle + segAngle/2) - 90) * Math.PI/180;
+        ctx.rotate(ang);
+        ctx.fillStyle = '#fff'; ctx.textAlign = 'right'; ctx.font = '14px Arial';
+        ctx.fillText(num, 130, 5);
+        ctx.restore();
+      });
+    }
+    drawWheel();
+
+    // Authenticate
+    btnLogin.addEventListener('click', () => {
+      const email = emailInput.value;
+      const pass = passInput.value;
+      loginError.textContent = '';
+      auth.signInWithEmailAndPassword(email, pass)
+        .catch(err => {
+          if (err.code === 'auth/user-not-found') {
+            // register new
+            auth.createUserWithEmailAndPassword(email, pass)
+              .catch(e => loginError.textContent = e.message);
+          } else loginError.textContent = err.message;
+        });
+    });
+
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        currentUser = user;
+        loginContainer.style.display = 'none';
+        gameContainer.style.display = 'block';
+        if (user.uid === ADMIN_UID) adminContainer.style.display = 'block';
+        // load or init balance
+        const docRef = db.collection('users').doc(user.uid);
+        docRef.get().then(doc => {
+          if (doc.exists) {
+            userBalance = doc.data().balance;
+            updateBalanceText();
+          } else {
+            docRef.set({ balance: 1000 });
+            userBalance = 1000;
+            updateBalanceText();
+          }
+        });
+      } else {
+        currentUser = null;
+        loginContainer.style.display = 'block';
+        gameContainer.style.display = 'none';
+        adminContainer.style.display = 'none';
+      }
+    });
+
+    function updateBalanceText() {
+      balanceText.textContent = `Balance: $${userBalance}`;
+    }
+
+    // Spin logic
+    btnSpin.addEventListener('click', () => {
+      const betAmt = parseInt(betAmountInput.value);
+      const betNum = parseInt(betNumberInput.value);
+      spinResult.textContent = '';
+      if (!betAmt || betAmt <= 0 || betAmt > userBalance) {
+        spinResult.textContent = 'Invalid bet amount.'; return;
+      }
+      if (isNaN(betNum) || betNum < 0 || betNum > 36) {
+        spinResult.textContent = 'Invalid number (0-36).'; return;
+      }
+      btnSpin.disabled = true;
+      const spins = Math.floor(Math.random()*4) + 4;
+      const randAng = Math.random()*360;
+      const totalRot = spins*360 + randAng;
+      document.getElementById('wheel').style.transform = `rotate(${totalRot}deg)`;
+      setTimeout(() => {
+        const finalRot = totalRot % 360;
+        const landing = Math.floor(((360 - finalRot + segAngle/2)%360) / segAngle);
+        const winNum = numbers[landing];
+        let msg;
+        if (winNum === betNum) {
+          const payout = betAmt * 35;
+          userBalance += payout;
+          msg = `Menang! Nomor: ${winNum}. Kamu mendapat $${payout}.`;
+        } else {
+          userBalance -= betAmt;
+          msg = `Kalah! Nomor: ${winNum}. Kamu kehilangan $${betAmt}.`;
+        }
+        // update firestore
+        db.collection('users').doc(currentUser.uid).update({ balance: userBalance });
+        updateBalanceText();
+        spinResult.textContent = msg;
+        btnSpin.disabled = false;
+        if (userBalance <= 0) {
+          spinResult.textContent += ' Saldo habis, hubungi admin.';
+          btnSpin.disabled = true;
+        }
+      }, 4000);
+    });
+
+    // Admin top-up
+    btnTopup.addEventListener('click', () => {
+      const targetUid = adminUserIdInput.value.trim();
+      const amt = parseInt(adminAmountInput.value);
+      adminMsg.textContent = '';
+      if (!targetUid || !amt || amt <= 0) { adminMsg.textContent = 'Masukkan UID dan jumlah yang valid.'; return; }
+      db.collection('users').doc(targetUid).get().then(doc => {
+        if (!doc.exists) { adminMsg.textContent = 'User tidak ditemukan.'; return; }
+        const newBal = doc.data().balance + amt;
+        db.collection('users').doc(targetUid).update({ balance: newBal })
+          .then(() => adminMsg.textContent = `Success! Saldo ${targetUid} bertambah menjadi $${newBal}`)
+          .catch(e => adminMsg.textContent = e.message);
+      });
+    });
+  </script></body>
+</html>
